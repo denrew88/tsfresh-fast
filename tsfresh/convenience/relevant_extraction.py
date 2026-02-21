@@ -39,6 +39,7 @@ def extract_relevant_features(
     distributor=None,
     chunksize=defaults.CHUNKSIZE,
     ml_task="auto",
+    use_fast_solver=None,
 ):
     """
     High level convenience function to extract time series features from `timeseries_container`. Then return feature
@@ -149,6 +150,10 @@ def extract_relevant_features(
                     If `y` has a boolean, integer or object dtype, the task is assumed to be classification,
                     else regression.
     :type ml_task: str
+    :param use_fast_solver: If True, enables fast/approximate solvers for feature calculators that explicitly
+        support them. If False, forces reference solvers. If None, uses the default solver behavior (including any
+        environment overrides).
+    :type use_fast_solver: bool or None
 
     :return: Feature matrix X, possibly extended with relevant time series features.
     """
@@ -196,6 +201,7 @@ def extract_relevant_features(
         column_value=column_value,
         distributor=distributor,
         impute_function=impute,
+        use_fast_solver=use_fast_solver,
     )
 
     X_sel = select_features(

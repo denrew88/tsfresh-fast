@@ -6,6 +6,7 @@ This module contains the main function to interact with tsfresh: extract feature
 """
 
 import logging
+import os
 import warnings
 from collections.abc import Iterable
 
@@ -45,6 +46,7 @@ def extract_features(
     profiling_sorting=defaults.PROFILING_SORTING,
     distributor=None,
     pivot=True,
+    use_fast_solver=None,
 ):
     """
     Extract features from
@@ -137,6 +139,10 @@ def extract_features(
              distributor. See the utilities/distribution.py for more information. Leave to None, if you want
              TSFresh to choose the best distributor.
     :type distributor: class
+    :param use_fast_solver: If True, enables fast/approximate solvers for feature calculators that explicitly
+        support them. If False, forces reference solvers. If None, uses the default solver behavior (including any
+        environment overrides).
+    :type use_fast_solver: bool or None
 
     :return: The (maybe imputed) DataFrame containing extracted features.
     :rtype: pandas.DataFrame
@@ -155,31 +161,45 @@ def extract_features(
     if profile:
         profiler = profiling.start_profiling()
 
-    with warnings.catch_warnings():
-        if not show_warnings:
-            warnings.simplefilter("ignore")
-        else:
-            warnings.simplefilter("default")
+    solver_env = None
+    prev_solver = None
+    if use_fast_solver is not None:
+        solver_env = feature_calculators._ADF_SOLVER_ENV
+        prev_solver = os.environ.get(solver_env)
+        os.environ[solver_env] = "normal_eq" if use_fast_solver else "pinv"
 
-        result = _do_extraction(
-            df=timeseries_container,
-            column_id=column_id,
-            column_value=column_value,
-            column_kind=column_kind,
-            column_sort=column_sort,
-            n_jobs=n_jobs,
-            chunk_size=chunksize,
-            disable_progressbar=disable_progressbar,
-            show_warnings=show_warnings,
-            default_fc_parameters=default_fc_parameters,
-            kind_to_fc_parameters=kind_to_fc_parameters,
-            distributor=distributor,
-            pivot=pivot,
-        )
+    try:
+        with warnings.catch_warnings():
+            if not show_warnings:
+                warnings.simplefilter("ignore")
+            else:
+                warnings.simplefilter("default")
 
-        # Impute the result if requested
-        if impute_function is not None:
-            impute_function(result)
+            result = _do_extraction(
+                df=timeseries_container,
+                column_id=column_id,
+                column_value=column_value,
+                column_kind=column_kind,
+                column_sort=column_sort,
+                n_jobs=n_jobs,
+                chunk_size=chunksize,
+                disable_progressbar=disable_progressbar,
+                show_warnings=show_warnings,
+                default_fc_parameters=default_fc_parameters,
+                kind_to_fc_parameters=kind_to_fc_parameters,
+                distributor=distributor,
+                pivot=pivot,
+            )
+
+            # Impute the result if requested
+            if impute_function is not None:
+                impute_function(result)
+    finally:
+        if use_fast_solver is not None:
+            if prev_solver is None:
+                os.environ.pop(solver_env, None)
+            else:
+                os.environ[solver_env] = prev_solver
 
     # Turn off profiling if it was turned on
     if profile:
