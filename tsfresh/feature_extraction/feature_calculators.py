@@ -19,6 +19,7 @@ alphabetically ascending.
 
 import functools
 import itertools
+import os
 import warnings
 from builtins import range
 from collections import defaultdict
@@ -527,6 +528,17 @@ def _augmented_dickey_fuller_original(x, param):
     return res
 
 
+_ADF_SOLVER_ENV = "TSFRESH_ADF_SOLVER"
+_ADF_SOLVER_DEFAULT = "pinv"
+
+
+def _get_adf_solver():
+    solver = os.environ.get(_ADF_SOLVER_ENV, _ADF_SOLVER_DEFAULT).strip().lower()
+    if solver in ("pinv", "normal_eq", "ne", "xtx"):
+        return "normal_eq" if solver in ("normal_eq", "ne", "xtx") else "pinv"
+    return _ADF_SOLVER_DEFAULT
+
+
 def _adf_ols_from_sufficient_stats(
     xtx: np.ndarray,
     xty: np.ndarray,
@@ -538,8 +550,9 @@ def _adf_ols_from_sufficient_stats(
 ):
     xtx = np.asarray(xtx, dtype=float)
     xty = np.asarray(xty, dtype=float)
+    solver = _get_adf_solver()
 
-    if exog is None or endog is None:
+    if solver != "pinv" or exog is None or endog is None:
         eigvals = np.linalg.eigvalsh(xtx)
         max_eig = np.max(eigvals)
         rcond_xtx = rcond_x * rcond_x
@@ -556,7 +569,11 @@ def _adf_ols_from_sufficient_stats(
             inv_xtx = np.linalg.inv(xtx)
             rank = xtx.shape[0]
 
-        sse = float(yty - np.dot(beta, xty))
+        if exog is not None and endog is not None:
+            resid = endog - exog @ beta
+            sse = float(np.dot(resid, resid))
+        else:
+            sse = float(yty - np.dot(beta, xty))
         if sse < 0:
             sse = 0.0
         df_resid = nobs - rank
