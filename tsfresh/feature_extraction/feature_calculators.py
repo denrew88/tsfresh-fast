@@ -1755,16 +1755,78 @@ def _sample_entropy_original(x, m, r):
     return -np.log(A / B)
 
 
+def _count_chebyshev_matches_multi_tol(
+    x: np.ndarray, m: int, tols: np.ndarray, block_size: int = 64
+) -> np.ndarray:
+    x = np.asarray(x)
+    if tols.size == 0:
+        return np.array([], dtype=np.int64)
+
+    n = x.size
+    k = n - m + 1
+    if k <= 0:
+        return np.zeros(tols.size, dtype=np.int64)
+
+    windows = np.lib.stride_tricks.sliding_window_view(x, m)
+    total_counts = np.zeros(tols.size, dtype=np.int64)
+
+    for start in range(0, k, block_size):
+        end = min(start + block_size, k)
+        windows_i = windows[start:end]
+
+        d = np.abs(windows_i[:, None, 0] - windows[None, :, 0])
+        for t in range(1, m):
+            dt = np.abs(windows_i[:, None, t] - windows[None, :, t])
+            np.maximum(d, dt, out=d)
+
+        for tol_idx, tol in enumerate(tols):
+            total_counts[tol_idx] += np.sum(d <= tol)
+
+    return total_counts
+
+
 @set_property("fctype", "combiner")
 @set_property("high_comp_cost", True)
 def sample_entropy_block_combiner(x, param):
-    res = {}
-    for config in param:
-        m = config["m"]
-        r = config["r"]
-        key = f"m_{m}__r_{r:g}"
-        res[key] = _sample_entropy_original(x, m, r)
-    return list(res.items())
+    x = np.asarray(x)
+    if np.isnan(x).any():
+        res = []
+        for config in param:
+            key = f"m_{config['m']}__r_{config['r']:g}"
+            res.append((key, np.nan))
+        return res
+
+    n = x.size
+    std_x = np.std(x)
+    params_by_m = defaultdict(list)
+    for idx, config in enumerate(param):
+        params_by_m[config["m"]].append((idx, config["r"]))
+
+    results = [None] * len(param)
+    for m, entries in params_by_m.items():
+        tols = np.array([r * std_x for _, r in entries], dtype=float)
+
+        k_m = n - m + 1
+        if k_m <= 0:
+            b_vals = np.zeros(len(entries), dtype=float)
+        else:
+            total_m = _count_chebyshev_matches_multi_tol(x, m, tols)
+            b_vals = total_m.astype(float) - float(k_m)
+
+        k_m1 = n - (m + 1) + 1
+        if k_m1 <= 0:
+            a_vals = np.zeros(len(entries), dtype=float)
+        else:
+            total_m1 = _count_chebyshev_matches_multi_tol(x, m + 1, tols)
+            a_vals = total_m1.astype(float) - float(k_m1)
+
+        values = -np.log(a_vals / b_vals)
+
+        for (value, (idx, r)) in zip(values, entries):
+            key = f"m_{m}__r_{r:g}"
+            results[idx] = (key, value)
+
+    return results
 
 
 @set_property("high_comp_cost", True)
@@ -1784,7 +1846,7 @@ def sample_entropy(x):
     :return: the value of this feature
     :return type: float
     """
-    return _sample_entropy_original(x, m=2, r=0.2)
+    return sample_entropy_block_combiner(x, [{"m": 2, "r": 0.2}])[0][1]
 
 
 def _approximate_entropy_original(x, m, r):
