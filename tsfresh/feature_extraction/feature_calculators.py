@@ -48,7 +48,8 @@ with warnings.catch_warnings():
     warnings.simplefilter("ignore", DeprecationWarning)
 
 
-from statsmodels.tsa.stattools import acf, adfuller, pacf
+from statsmodels.tsa.stattools import acf, adfuller, mackinnonp, pacf
+from statsmodels.tsa.tsatools import add_trend, lagmat
 
 # todo: make sure '_' works in parameter names in all cases, add a warning if not
 
@@ -525,6 +526,145 @@ def _augmented_dickey_fuller_original(x, param):
     return res
 
 
+def _adf_ols_from_sufficient_stats(
+    xtx: np.ndarray, xty: np.ndarray, yty: float, nobs: int
+):
+    beta = np.linalg.solve(xtx, xty)
+    sse = float(yty - np.dot(beta, xty))
+    df_resid = nobs - xtx.shape[0]
+    sigma2 = sse / df_resid
+    inv_xtx = np.linalg.inv(xtx)
+    se = np.sqrt(np.diag(inv_xtx) * sigma2)
+    tvalues = beta / se
+    return beta, tvalues, sse, df_resid
+
+
+def _adf_autolag_from_sufficient_stats(
+    xtx_full: np.ndarray,
+    xty_full: np.ndarray,
+    yty: float,
+    nobs: int,
+    startlag: int,
+    maxlag: int,
+    method: str,
+):
+    k_start = startlag
+    k_end = startlag + maxlag
+    if method in ("aic", "bic"):
+        icbest = np.inf
+        best_k = k_start
+        for k in range(k_start, k_end + 1):
+            xtx_k = xtx_full[:k, :k]
+            xty_k = xty_full[:k]
+            beta = np.linalg.solve(xtx_k, xty_k)
+            sse = float(yty - np.dot(beta, xty_k))
+            llf = -0.5 * nobs * (
+                np.log(2.0 * np.pi) + np.log(sse / nobs) + 1.0
+            )
+            k_params = np.linalg.matrix_rank(xtx_k)
+            if method == "aic":
+                ic = -2.0 * llf + 2.0 * k_params
+            else:
+                ic = -2.0 * llf + np.log(nobs) * k_params
+            if ic < icbest:
+                icbest = ic
+                best_k = k
+        return icbest, best_k
+
+    if method == "t-stat":
+        stop = 1.6448536269514722
+        tvalues_last = []
+        for k in range(k_start, k_end + 1):
+            xtx_k = xtx_full[:k, :k]
+            xty_k = xty_full[:k]
+            beta = np.linalg.solve(xtx_k, xty_k)
+            sse = float(yty - np.dot(beta, xty_k))
+            df_resid = nobs - k
+            sigma2 = sse / df_resid
+            inv_xtx = np.linalg.inv(xtx_k)
+            t_last = beta[-1] / np.sqrt(inv_xtx[-1, -1] * sigma2)
+            tvalues_last.append(t_last)
+
+        best_k = k_end
+        icbest = 0.0
+        for k in range(k_end, k_start - 1, -1):
+            t_last = tvalues_last[k - k_start]
+            icbest = np.abs(t_last)
+            best_k = k
+            if np.abs(t_last) >= stop:
+                break
+        return icbest, best_k
+
+    raise ValueError(f"Information Criterion {method} not understood.")
+
+
+def _adf_fast(x, autolag):
+    x = np.asarray(x, dtype=float)
+    if not np.isfinite(x).all():
+        raise MissingDataError("exog contains inf or nans")
+
+    if x.max() == x.min():
+        raise ValueError("Invalid input, x is constant")
+
+    regression = "c"
+    nobs = x.shape[0]
+    ntrend = len(regression) if regression != "n" else 0
+
+    maxlag = int(np.ceil(12.0 * np.power(nobs / 100.0, 1 / 4.0)))
+    maxlag = min(nobs // 2 - ntrend - 1, maxlag)
+    if maxlag < 0:
+        raise ValueError(
+            "sample size is too short to use selected regression component"
+        )
+
+    xdiff = np.diff(x)
+    xdall = lagmat(xdiff[:, None], maxlag, trim="both", original="in")
+    nobs_used = xdall.shape[0]
+    xdall[:, 0] = x[-nobs_used - 1 : -1]
+    xdshort = xdiff[-nobs_used:]
+
+    method = None
+    if autolag is not None:
+        if isinstance(autolag, str):
+            method = autolag.lower()
+        else:
+            raise ValueError("autolag must be a string or None")
+
+    usedlag = maxlag
+    if method:
+        if regression != "n":
+            full_rhs = add_trend(xdall, regression, prepend=True)
+        else:
+            full_rhs = xdall
+        startlag = full_rhs.shape[1] - xdall.shape[1] + 1
+        xtx_full = full_rhs.T @ full_rhs
+        xty_full = full_rhs.T @ xdshort
+        yty = float(np.dot(xdshort, xdshort))
+
+        icbest, best_k = _adf_autolag_from_sufficient_stats(
+            xtx_full, xty_full, yty, nobs_used, startlag, maxlag, method
+        )
+        usedlag = best_k - startlag
+
+        xdall = lagmat(xdiff[:, None], usedlag, trim="both", original="in")
+        nobs_used = xdall.shape[0]
+        xdall[:, 0] = x[-nobs_used - 1 : -1]
+        xdshort = xdiff[-nobs_used:]
+
+    if regression != "n":
+        exog = add_trend(xdall[:, : usedlag + 1], regression)
+    else:
+        exog = xdall[:, : usedlag + 1]
+
+    xtx = exog.T @ exog
+    xty = exog.T @ xdshort
+    yty = float(np.dot(xdshort, xdshort))
+    _, tvalues, _, _ = _adf_ols_from_sufficient_stats(xtx, xty, yty, xdshort.shape[0])
+    adfstat = tvalues[0]
+    pvalue = mackinnonp(adfstat, regression=regression, N=1)
+    return adfstat, pvalue, usedlag
+
+
 @set_property("fctype", "combiner")
 def augmented_dickey_fuller(x, param):
     """
@@ -544,7 +684,29 @@ def augmented_dickey_fuller(x, param):
     :return: the value of this feature
     :return type: List[Tuple[str, float]]
     """
-    return _augmented_dickey_fuller_original(x, param)
+    res = []
+    cache = {}
+    for config in param:
+        autolag = config.get("autolag", "AIC")
+        if autolag not in cache:
+            try:
+                cache[autolag] = _adf_fast(x, autolag)
+            except (LinAlgError, ValueError, MissingDataError):
+                cache[autolag] = (np.nan, np.nan, np.nan)
+
+        adf = cache[autolag]
+        index = f'attr_"{config["attr"]}"__autolag_"{autolag}"'
+
+        if config["attr"] == "teststat":
+            res.append((index, adf[0]))
+        elif config["attr"] == "pvalue":
+            res.append((index, adf[1]))
+        elif config["attr"] == "usedlag":
+            res.append((index, adf[2]))
+        else:
+            res.append((index, np.nan))
+
+    return res
 
 
 @set_property("fctype", "simple")
