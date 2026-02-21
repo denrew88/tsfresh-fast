@@ -1809,16 +1809,65 @@ def _approximate_entropy_original(x, m, r):
     return np.abs(_phi(m) - _phi(m + 1))
 
 
+def _phi_block_chebyshev_multi_tol(
+    x: np.ndarray, m: int, tols: np.ndarray, block_size: int = 64
+) -> np.ndarray:
+    x = np.asarray(x)
+    if tols.size == 0:
+        return np.array([], dtype=float)
+
+    n = x.size
+    k = n - m + 1
+    windows = np.lib.stride_tricks.sliding_window_view(x, m)
+    counts = np.zeros((tols.size, k), dtype=np.int64)
+
+    for start in range(0, k, block_size):
+        end = min(start + block_size, k)
+        windows_i = windows[start:end]
+
+        d = np.abs(windows_i[:, None, 0] - windows[None, :, 0])
+        for t in range(1, m):
+            dt = np.abs(windows_i[:, None, t] - windows[None, :, t])
+            np.maximum(d, dt, out=d)
+
+        for tol_idx, tol in enumerate(tols):
+            counts[tol_idx] += np.sum(d <= tol, axis=0)
+
+    c_vals = counts / k
+    return np.sum(np.log(c_vals), axis=1) / k
+
+
 @set_property("fctype", "combiner")
 @set_property("high_comp_cost", True)
 def approximate_entropy_block_combiner(x, param):
-    res = {}
-    for config in param:
-        m = config["m"]
-        r = config["r"]
-        key = f"m_{m}__r_{r:g}"
-        res[key] = _approximate_entropy_original(x, m, r)
-    return list(res.items())
+    if not isinstance(x, (np.ndarray, pd.Series)):
+        x = np.asarray(x)
+    x = np.asarray(x)
+
+    n = x.size
+    std_x = np.std(x)
+    params_by_m = defaultdict(list)
+    for idx, config in enumerate(param):
+        params_by_m[config["m"]].append((idx, config["r"]))
+
+    results = [None] * len(param)
+    for m, entries in params_by_m.items():
+        tols = np.array([r * std_x for _, r in entries], dtype=float)
+        if np.any(tols < 0):
+            raise ValueError("Parameter r must be positive.")
+
+        if n <= m + 1:
+            values = np.zeros(len(entries), dtype=float)
+        else:
+            phi_m = _phi_block_chebyshev_multi_tol(x, m, tols)
+            phi_m1 = _phi_block_chebyshev_multi_tol(x, m + 1, tols)
+            values = np.abs(phi_m - phi_m1)
+
+        for (value, (idx, r)) in zip(values, entries):
+            key = f"m_{m}__r_{r:g}"
+            results[idx] = (key, value)
+
+    return results
 
 
 @set_property("fctype", "simple")
@@ -1851,7 +1900,7 @@ def approximate_entropy(x, m, r):
     :return: Approximate entropy
     :return type: float
     """
-    return _approximate_entropy_original(x, m, r)
+    return approximate_entropy_block_combiner(x, [{"m": m, "r": r}])[0][1]
 
 
 @set_property("fctype", "simple")
