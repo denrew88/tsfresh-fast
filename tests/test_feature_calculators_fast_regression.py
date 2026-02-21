@@ -43,6 +43,26 @@ ADF_PARAMS = [
 ]
 
 
+def _smooth_signal_bank(length, rng):
+    t = np.linspace(0.0, 1.0, length, endpoint=False, dtype=np.float64)
+    trig = np.sin(2 * np.pi * 3 * t) + 0.3 * np.cos(2 * np.pi * 5 * t)
+    damped = np.exp(-5.0 * t) * np.sin(2 * np.pi * 5 * t)
+    poly = 0.1 * t + 0.2 * t**2 + 0.01 * rng.standard_normal(length)
+    step = 0.5 * (1.0 / (1.0 + np.exp(-40.0 * (t - 0.5))))
+    sin_step = np.sin(2 * np.pi * 2 * t) + step
+    plateau = np.sin(2 * np.pi * 2 * t)
+    seg_len = max(1, length // 20)
+    plateau[length // 4 : length // 4 + seg_len] = 0.3
+    plateau[length // 2 : length // 2 + seg_len] = -0.2
+    return {
+        "trig": trig,
+        "damped": damped,
+        "poly": poly,
+        "sin_step": sin_step,
+        "plateau": plateau,
+    }
+
+
 @pytest.fixture(scope="module")
 def random_series():
     rng = np.random.default_rng(0)
@@ -64,10 +84,21 @@ def nan_series(random_series):
     return data
 
 
-def _assert_keys_values_close(actual_items, expected_items):
+@pytest.fixture(scope="module")
+def smooth_series():
+    rng = np.random.default_rng(0)
+    data = []
+    for length in LENGTHS:
+        signals = _smooth_signal_bank(length, rng)
+        for name, series in signals.items():
+            data.append((name, length, series))
+    return data
+
+
+def _assert_keys_values_close(actual_items, expected_items, context=""):
     actual = dict(actual_items)
     expected = dict(expected_items)
-    assert set(actual.keys()) == set(expected.keys())
+    assert set(actual.keys()) == set(expected.keys()), context
     for key in expected:
         np.testing.assert_allclose(
             actual[key],
@@ -75,6 +106,7 @@ def _assert_keys_values_close(actual_items, expected_items):
             rtol=1e-12,
             atol=1e-12,
             equal_nan=True,
+            err_msg=f"{context} key={key}",
         )
 
 
@@ -108,6 +140,14 @@ def _change_quantiles_expected(x, params):
         )
         for config in params
     ]
+
+
+def _params_for_length(length, full, medium, large):
+    if length >= 10000:
+        return large
+    if length >= 1000:
+        return medium
+    return full
 
 
 @pytest.mark.parametrize(
@@ -147,6 +187,18 @@ def test_approximate_entropy_short():
     _assert_keys_values_close(actual, expected)
 
 
+def test_approximate_entropy_smooth(smooth_series):
+    for name, length, series in smooth_series:
+        params = _params_for_length(
+            length, APPROX_PARAMS, APPROX_PARAMS_MEDIUM, APPROX_PARAMS_LARGE
+        )
+        expected = _approximate_entropy_expected(series, params)
+        actual = approximate_entropy_block_combiner(series, params)
+        _assert_keys_values_close(
+            actual, expected, context=f"approximate_entropy {name} n={length}"
+        )
+
+
 @pytest.mark.parametrize(
     ("length", "params"),
     [
@@ -182,6 +234,18 @@ def test_sample_entropy_short():
     expected = _sample_entropy_expected(x, SAMPEN_PARAMS)
     actual = sample_entropy_block_combiner(x, SAMPEN_PARAMS)
     _assert_keys_values_close(actual, expected)
+
+
+def test_sample_entropy_smooth(smooth_series):
+    for name, length, series in smooth_series:
+        params = _params_for_length(
+            length, SAMPEN_PARAMS, SAMPEN_PARAMS_MEDIUM, SAMPEN_PARAMS_LARGE
+        )
+        expected = _sample_entropy_expected(series, params)
+        actual = sample_entropy_block_combiner(series, params)
+        _assert_keys_values_close(
+            actual, expected, context=f"sample_entropy {name} n={length}"
+        )
 
 
 @pytest.mark.parametrize("length", LENGTHS)
@@ -220,6 +284,15 @@ def test_change_quantiles_small_n():
     _assert_keys_values_close(actual, expected)
 
 
+def test_change_quantiles_smooth(smooth_series):
+    for name, length, series in smooth_series:
+        expected = _change_quantiles_expected(series, CHANGE_QUANTILES_PARAMS)
+        actual = change_quantiles_qcut_exact_combiner(series, CHANGE_QUANTILES_PARAMS)
+        _assert_keys_values_close(
+            actual, expected, context=f"change_quantiles {name} n={length}"
+        )
+
+
 @pytest.mark.parametrize("length", LENGTHS)
 def test_augmented_dickey_fuller_random(random_series, length):
     x = random_series[length]
@@ -233,3 +306,10 @@ def test_augmented_dickey_fuller_constant(constant_series):
     expected = _augmented_dickey_fuller_original(x, ADF_PARAMS)
     actual = augmented_dickey_fuller(x, ADF_PARAMS)
     _assert_keys_values_close(actual, expected)
+
+
+def test_augmented_dickey_fuller_smooth(smooth_series):
+    for name, length, series in smooth_series:
+        expected = _augmented_dickey_fuller_original(series, ADF_PARAMS)
+        actual = augmented_dickey_fuller(series, ADF_PARAMS)
+        _assert_keys_values_close(actual, expected, context=f"adf {name} n={length}")

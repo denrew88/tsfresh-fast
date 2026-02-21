@@ -32,6 +32,7 @@ from numpy.linalg import LinAlgError
 from scipy.signal import find_peaks_cwt, welch
 from scipy.stats import linregress
 from statsmodels.tools.sm_exceptions import MissingDataError
+from statsmodels.tools.tools import pinv_extended
 from statsmodels.tsa.ar_model import AutoReg
 
 try:
@@ -527,16 +528,60 @@ def _augmented_dickey_fuller_original(x, param):
 
 
 def _adf_ols_from_sufficient_stats(
-    xtx: np.ndarray, xty: np.ndarray, yty: float, nobs: int
+    xtx: np.ndarray,
+    xty: np.ndarray,
+    yty: float,
+    nobs: int,
+    rcond_x: float = 1e-15,
+    exog: np.ndarray | None = None,
+    endog: np.ndarray | None = None,
 ):
-    beta = np.linalg.solve(xtx, xty)
-    sse = float(yty - np.dot(beta, xty))
-    df_resid = nobs - xtx.shape[0]
+    xtx = np.asarray(xtx, dtype=float)
+    xty = np.asarray(xty, dtype=float)
+
+    if exog is None or endog is None:
+        eigvals = np.linalg.eigvalsh(xtx)
+        max_eig = np.max(eigvals)
+        rcond_xtx = rcond_x * rcond_x
+        threshold = rcond_xtx * max_eig
+
+        if not np.isfinite(max_eig) or max_eig <= 0 or np.min(eigvals) <= threshold:
+            eigvals_full, eigvecs = np.linalg.eigh(xtx)
+            inv_eigs = np.where(eigvals_full > threshold, 1.0 / eigvals_full, 0.0)
+            inv_xtx = (eigvecs * inv_eigs) @ eigvecs.T
+            rank = int(np.sum(eigvals_full > threshold))
+            beta = inv_xtx @ xty
+        else:
+            beta = np.linalg.solve(xtx, xty)
+            inv_xtx = np.linalg.inv(xtx)
+            rank = xtx.shape[0]
+
+        sse = float(yty - np.dot(beta, xty))
+        if sse < 0:
+            sse = 0.0
+        df_resid = nobs - rank
+        sigma2 = sse / df_resid
+        se = np.sqrt(np.diag(inv_xtx) * sigma2)
+        tvalues = beta / se
+        return beta, tvalues, sse, df_resid, rank
+
+    exog = np.asarray(exog, dtype=float)
+    endog = np.asarray(endog, dtype=float)
+    pinv, singular_values = pinv_extended(exog, rcond=rcond_x)
+    normalized_cov_params = pinv @ pinv.T
+    rank = (
+        np.linalg.matrix_rank(np.diag(singular_values)) if singular_values.size else 0
+    )
+
+    beta = pinv @ endog
+
+    resid = endog - exog @ beta
+    sse = float(np.dot(resid, resid))
+    df_resid = nobs - rank
     sigma2 = sse / df_resid
-    inv_xtx = np.linalg.inv(xtx)
-    se = np.sqrt(np.diag(inv_xtx) * sigma2)
+    se = np.sqrt(np.diag(normalized_cov_params) * sigma2)
     tvalues = beta / se
-    return beta, tvalues, sse, df_resid
+    return beta, tvalues, sse, df_resid, rank
 
 
 def _adf_autolag_from_sufficient_stats(
@@ -547,6 +592,8 @@ def _adf_autolag_from_sufficient_stats(
     startlag: int,
     maxlag: int,
     method: str,
+    exog_full: np.ndarray,
+    endog: np.ndarray,
 ):
     k_start = startlag
     k_end = startlag + maxlag
@@ -556,12 +603,14 @@ def _adf_autolag_from_sufficient_stats(
         for k in range(k_start, k_end + 1):
             xtx_k = xtx_full[:k, :k]
             xty_k = xty_full[:k]
-            beta = np.linalg.solve(xtx_k, xty_k)
-            sse = float(yty - np.dot(beta, xty_k))
+            exog_k = exog_full[:, :k]
+            _, _, sse, _, rank = _adf_ols_from_sufficient_stats(
+                xtx_k, xty_k, yty, nobs, exog=exog_k, endog=endog
+            )
             llf = -0.5 * nobs * (
                 np.log(2.0 * np.pi) + np.log(sse / nobs) + 1.0
             )
-            k_params = np.linalg.matrix_rank(xtx_k)
+            k_params = rank
             if method == "aic":
                 ic = -2.0 * llf + 2.0 * k_params
             else:
@@ -577,12 +626,11 @@ def _adf_autolag_from_sufficient_stats(
         for k in range(k_start, k_end + 1):
             xtx_k = xtx_full[:k, :k]
             xty_k = xty_full[:k]
-            beta = np.linalg.solve(xtx_k, xty_k)
-            sse = float(yty - np.dot(beta, xty_k))
-            df_resid = nobs - k
-            sigma2 = sse / df_resid
-            inv_xtx = np.linalg.inv(xtx_k)
-            t_last = beta[-1] / np.sqrt(inv_xtx[-1, -1] * sigma2)
+            exog_k = exog_full[:, :k]
+            beta, tvalues, _, _, _ = _adf_ols_from_sufficient_stats(
+                xtx_k, xty_k, yty, nobs, exog=exog_k, endog=endog
+            )
+            t_last = tvalues[-1]
             tvalues_last.append(t_last)
 
         best_k = k_end
@@ -642,7 +690,15 @@ def _adf_fast(x, autolag):
         yty = float(np.dot(xdshort, xdshort))
 
         icbest, best_k = _adf_autolag_from_sufficient_stats(
-            xtx_full, xty_full, yty, nobs_used, startlag, maxlag, method
+            xtx_full,
+            xty_full,
+            yty,
+            nobs_used,
+            startlag,
+            maxlag,
+            method,
+            exog_full=full_rhs,
+            endog=xdshort,
         )
         usedlag = best_k - startlag
 
@@ -659,7 +715,9 @@ def _adf_fast(x, autolag):
     xtx = exog.T @ exog
     xty = exog.T @ xdshort
     yty = float(np.dot(xdshort, xdshort))
-    _, tvalues, _, _ = _adf_ols_from_sufficient_stats(xtx, xty, yty, xdshort.shape[0])
+    _, tvalues, _, _, _ = _adf_ols_from_sufficient_stats(
+        xtx, xty, yty, xdshort.shape[0], exog=exog, endog=xdshort
+    )
     adfstat = tvalues[0]
     pvalue = mackinnonp(adfstat, regression=regression, N=1)
     return adfstat, pvalue, usedlag
