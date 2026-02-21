@@ -116,6 +116,7 @@ class RelevantFeatureAugmenter(BaseEstimator, TransformerMixin):
         multiclass=False,
         n_significant=1,
         multiclass_p_values="min",
+        use_fast_solver=None,
     ):
         """
         Create a new RelevantFeatureAugmenter instance.
@@ -217,6 +218,11 @@ class RelevantFeatureAugmenter(BaseEstimator, TransformerMixin):
                                     `self.feature_importances_` and `self.p_values` are of type pandas.DataFrame, where
                                     each column corresponds to a target class.
         :type multiclass_p_values: str
+
+        :param use_fast_solver: If True, enables fast/approximate solvers for feature calculators that explicitly
+            support them. If False, forces reference solvers. If None, uses the default solver behavior (including any
+            environment overrides).
+        :type use_fast_solver: bool or None
         """
         self.filter_only_tsfresh_features = filter_only_tsfresh_features
         self.default_fc_parameters = default_fc_parameters
@@ -245,6 +251,7 @@ class RelevantFeatureAugmenter(BaseEstimator, TransformerMixin):
         self.multiclass = multiclass
         self.n_significant = n_significant
         self.multiclass_p_values = multiclass_p_values
+        self.use_fast_solver = use_fast_solver
 
         # attributes
         self.feature_extractor = None
@@ -347,6 +354,7 @@ class RelevantFeatureAugmenter(BaseEstimator, TransformerMixin):
             profile=self.feature_extractor.profile,
             profiling_filename=self.feature_extractor.profiling_filename,
             profiling_sorting=self.feature_extractor.profiling_sorting,
+            use_fast_solver=self.use_fast_solver,
         )
 
         relevant_feature_extractor.set_timeseries_container(
@@ -427,6 +435,7 @@ class RelevantFeatureAugmenter(BaseEstimator, TransformerMixin):
             profile=self.profile,
             profiling_filename=self.profiling_filename,
             profiling_sorting=self.profiling_sorting,
+            use_fast_solver=self.use_fast_solver,
         )
 
         self.feature_selector = FeatureSelector(

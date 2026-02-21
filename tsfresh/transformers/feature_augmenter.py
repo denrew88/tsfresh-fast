@@ -78,6 +78,7 @@ class FeatureAugmenter(BaseEstimator, TransformerMixin):
         profile=tsfresh.defaults.PROFILING,
         profiling_filename=tsfresh.defaults.PROFILING_FILENAME,
         profiling_sorting=tsfresh.defaults.PROFILING_SORTING,
+        use_fast_solver=None,
     ):
         """
         Create a new FeatureAugmenter instance.
@@ -133,6 +134,11 @@ class FeatureAugmenter(BaseEstimator, TransformerMixin):
 
         :param profiling_filename: Where to save the profiling results.
         :type profiling_filename: basestring
+
+        :param use_fast_solver: If True, enables fast/approximate solvers for feature calculators that explicitly
+            support them. If False, forces reference solvers. If None, uses the default solver behavior (including any
+            environment overrides).
+        :type use_fast_solver: bool or None
         """
         self.default_fc_parameters = default_fc_parameters
         self.kind_to_fc_parameters = kind_to_fc_parameters
@@ -150,6 +156,7 @@ class FeatureAugmenter(BaseEstimator, TransformerMixin):
         self.profile = profile
         self.profiling_filename = profiling_filename
         self.profiling_sorting = profiling_sorting
+        self.use_fast_solver = use_fast_solver
 
         self.timeseries_container = timeseries_container
 
@@ -225,6 +232,7 @@ class FeatureAugmenter(BaseEstimator, TransformerMixin):
             profile=self.profile,
             profiling_filename=self.profiling_filename,
             profiling_sorting=self.profiling_sorting,
+            use_fast_solver=self.use_fast_solver,
         )
 
         X = pd.merge(
