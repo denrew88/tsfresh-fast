@@ -495,26 +495,7 @@ def partial_autocorrelation(x, param):
     return [(f"lag_{lag['lag']}", pacf_coeffs[lag["lag"]]) for lag in param]
 
 
-@set_property("fctype", "combiner")
-def augmented_dickey_fuller(x, param):
-    """
-    Does the time series have a unit root?
-
-    The Augmented Dickey-Fuller test is a hypothesis test which checks whether a unit root is present in a time
-    series sample. This feature calculator returns the value of the respective test statistic.
-
-    See the statsmodels implementation for references and more details.
-
-    :param x: the time series to calculate the feature of
-    :type x: numpy.ndarray
-    :param param: contains dictionaries {"attr": x, "autolag": y} with x str, either "teststat", "pvalue" or "usedlag"
-                  and with y str, either of "AIC", "BIC", "t-stats" or None (See the documentation of adfuller() in
-                  statsmodels).
-    :type param: list
-    :return: the value of this feature
-    :return type: List[Tuple[str, float]]
-    """
-
+def _augmented_dickey_fuller_original(x, param):
     @functools.lru_cache()
     def compute_adf(autolag):
         try:
@@ -542,6 +523,28 @@ def augmented_dickey_fuller(x, param):
         else:
             res.append((index, np.nan))
     return res
+
+
+@set_property("fctype", "combiner")
+def augmented_dickey_fuller(x, param):
+    """
+    Does the time series have a unit root?
+
+    The Augmented Dickey-Fuller test is a hypothesis test which checks whether a unit root is present in a time
+    series sample. This feature calculator returns the value of the respective test statistic.
+
+    See the statsmodels implementation for references and more details.
+
+    :param x: the time series to calculate the feature of
+    :type x: numpy.ndarray
+    :param param: contains dictionaries {"attr": x, "autolag": y} with x str, either "teststat", "pvalue" or "usedlag"
+                  and with y str, either of "AIC", "BIC", "t-stats" or None (See the documentation of adfuller() in
+                  statsmodels).
+    :type param: list
+    :return: the value of this feature
+    :return type: List[Tuple[str, float]]
+    """
+    return _augmented_dickey_fuller_original(x, param)
 
 
 @set_property("fctype", "simple")
@@ -1507,6 +1510,43 @@ def ar_coefficient(x, param):
     return list(res.items())
 
 
+def _change_quantiles_original(x, ql, qh, isabs, f_agg):
+    if ql >= qh:
+        return 0.0
+
+    div = np.diff(x)
+    if isabs:
+        div = np.abs(div)
+    # All values that originate from the corridor between the quantiles ql and qh will have the category 0,
+    # other will be np.nan
+    try:
+        bin_cat = pd.qcut(x, [ql, qh], labels=False)
+        bin_cat_0 = bin_cat == 0
+    except ValueError:  # Occurs when ql are qh effectively equal, e.g. x is not long enough or is too categorical
+        return 0.0
+    # We only count changes that start and end inside the corridor
+    ind = (bin_cat_0 & _roll(bin_cat_0, 1))[1:]
+    if np.sum(ind) == 0:
+        return 0.0
+
+    ind_inside_corridor = np.where(ind == 1)
+    aggregator = getattr(np, f_agg)
+    return aggregator(div[ind_inside_corridor])
+
+
+@set_property("fctype", "combiner")
+def change_quantiles_qcut_exact_combiner(x, param):
+    res = {}
+    for config in param:
+        ql = config["ql"]
+        qh = config["qh"]
+        isabs = config["isabs"]
+        f_agg = config["f_agg"]
+        key = f"f_agg_{f_agg}__isabs_{isabs}__qh_{qh}__ql_{ql}"
+        res[key] = _change_quantiles_original(x, ql, qh, isabs, f_agg)
+    return list(res.items())
+
+
 @set_property("fctype", "simple")
 def change_quantiles(x, ql, qh, isabs, f_agg):
     """
@@ -1530,27 +1570,7 @@ def change_quantiles(x, ql, qh, isabs, f_agg):
     :return: the value of this feature
     :return type: float
     """
-    if ql >= qh:
-        return 0.0
-
-    div = np.diff(x)
-    if isabs:
-        div = np.abs(div)
-    # All values that originate from the corridor between the quantiles ql and qh will have the category 0,
-    # other will be np.nan
-    try:
-        bin_cat = pd.qcut(x, [ql, qh], labels=False)
-        bin_cat_0 = bin_cat == 0
-    except ValueError:  # Occurs when ql are qh effectively equal, e.g. x is not long enough or is too categorical
-        return 0.0
-    # We only count changes that start and end inside the corridor
-    ind = (bin_cat_0 & _roll(bin_cat_0, 1))[1:]
-    if np.sum(ind) == 0:
-        return 0.0
-
-    ind_inside_corridor = np.where(ind == 1)
-    aggregator = getattr(np, f_agg)
-    return aggregator(div[ind_inside_corridor])
+    return _change_quantiles_original(x, ql, qh, isabs, f_agg)
 
 
 @set_property("fctype", "simple")
@@ -1696,33 +1716,14 @@ def binned_entropy(x, max_bins):
 
 # todo - include latex formula
 # todo - check if vectorizable
-@set_property("high_comp_cost", True)
-@set_property("fctype", "simple")
-def sample_entropy(x):
-    """
-    Calculate and return sample entropy of x.
-
-    .. rubric:: References
-
-    |  [1] http://en.wikipedia.org/wiki/Sample_Entropy
-    |  [2] https://www.ncbi.nlm.nih.gov/pubmed/10843903?dopt=Abstract
-
-    :param x: the time series to calculate the feature of
-    :type x: numpy.ndarray
-
-    :return: the value of this feature
-    :return type: float
-    """
+def _sample_entropy_original(x, m, r):
     x = np.array(x)
 
     # if one of the values is NaN, we can not compute anything meaningful
     if np.isnan(x).any():
         return np.nan
 
-    m = 2  # common value for m, according to wikipedia...
-    tolerance = 0.2 * np.std(
-        x
-    )  # 0.2 is a common value for r, according to wikipedia...
+    tolerance = r * np.std(x)
 
     # Split time series and save all templates of length m
     # Basically we turn [1, 2, 3, 4] into [1, 2], [2, 3], [3, 4]
@@ -1752,6 +1753,72 @@ def sample_entropy(x):
 
     # Return SampEn
     return -np.log(A / B)
+
+
+@set_property("fctype", "combiner")
+@set_property("high_comp_cost", True)
+def sample_entropy_block_combiner(x, param):
+    res = {}
+    for config in param:
+        m = config["m"]
+        r = config["r"]
+        key = f"m_{m}__r_{r:g}"
+        res[key] = _sample_entropy_original(x, m, r)
+    return list(res.items())
+
+
+@set_property("high_comp_cost", True)
+@set_property("fctype", "simple")
+def sample_entropy(x):
+    """
+    Calculate and return sample entropy of x.
+
+    .. rubric:: References
+
+    |  [1] http://en.wikipedia.org/wiki/Sample_Entropy
+    |  [2] https://www.ncbi.nlm.nih.gov/pubmed/10843903?dopt=Abstract
+
+    :param x: the time series to calculate the feature of
+    :type x: numpy.ndarray
+
+    :return: the value of this feature
+    :return type: float
+    """
+    return _sample_entropy_original(x, m=2, r=0.2)
+
+
+def _approximate_entropy_original(x, m, r):
+    if not isinstance(x, (np.ndarray, pd.Series)):
+        x = np.asarray(x)
+
+    N = x.size
+    r *= np.std(x)
+    if r < 0:
+        raise ValueError("Parameter r must be positive.")
+    if N <= m + 1:
+        return 0
+
+    def _phi(m):
+        x_re = np.array([x[i : i + m] for i in range(N - m + 1)])
+        C = np.sum(
+            np.max(np.abs(x_re[:, np.newaxis] - x_re[np.newaxis, :]), axis=2) <= r,
+            axis=0,
+        ) / (N - m + 1)
+        return np.sum(np.log(C)) / (N - m + 1.0)
+
+    return np.abs(_phi(m) - _phi(m + 1))
+
+
+@set_property("fctype", "combiner")
+@set_property("high_comp_cost", True)
+def approximate_entropy_block_combiner(x, param):
+    res = {}
+    for config in param:
+        m = config["m"]
+        r = config["r"]
+        key = f"m_{m}__r_{r:g}"
+        res[key] = _approximate_entropy_original(x, m, r)
+    return list(res.items())
 
 
 @set_property("fctype", "simple")
@@ -1784,25 +1851,7 @@ def approximate_entropy(x, m, r):
     :return: Approximate entropy
     :return type: float
     """
-    if not isinstance(x, (np.ndarray, pd.Series)):
-        x = np.asarray(x)
-
-    N = x.size
-    r *= np.std(x)
-    if r < 0:
-        raise ValueError("Parameter r must be positive.")
-    if N <= m + 1:
-        return 0
-
-    def _phi(m):
-        x_re = np.array([x[i : i + m] for i in range(N - m + 1)])
-        C = np.sum(
-            np.max(np.abs(x_re[:, np.newaxis] - x_re[np.newaxis, :]), axis=2) <= r,
-            axis=0,
-        ) / (N - m + 1)
-        return np.sum(np.log(C)) / (N - m + 1.0)
-
-    return np.abs(_phi(m) - _phi(m + 1))
+    return _approximate_entropy_original(x, m, r)
 
 
 @set_property("fctype", "simple")
