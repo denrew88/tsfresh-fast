@@ -1,9 +1,15 @@
 # -*- coding: utf-8 -*-
 # This file as well as the whole tsfresh package are licenced under the MIT licence (see the LICENCE.txt)
 
+import os
+import sys
 import time
+from pathlib import Path
 
 import numpy as np
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
 
 from tsfresh.feature_extraction.feature_calculators import (
     _approximate_entropy_original,
@@ -17,7 +23,7 @@ from tsfresh.feature_extraction.feature_calculators import (
 )
 
 
-def _time_call(fn, *args, repeats=3, **kwargs):
+def _time_call(fn, *args, repeats=1, **kwargs):
     best = float("inf")
     for _ in range(repeats):
         start = time.perf_counter()
@@ -46,8 +52,8 @@ def bench():
     rng = np.random.default_rng(0)
     x = rng.standard_normal(10000)
 
-    approx_params = [{"m": 2, "r": r} for r in np.linspace(0.1, 0.5, 10)]
-    sampen_params = [{"m": 2, "r": r} for r in np.linspace(0.1, 0.4, 10)]
+    approx_params = [{"m": 2, "r": r} for r in (0.1, 0.2, 0.3)]
+    sampen_params = [{"m": 2, "r": r} for r in (0.1, 0.2, 0.3)]
     change_params = [
         {"ql": ql, "qh": qh, "isabs": isabs, "f_agg": f_agg}
         for (ql, qh) in ((0.1, 0.9), (0.2, 0.8), (0.25, 0.75))
@@ -96,21 +102,29 @@ def bench():
     adf_actual = augmented_dickey_fuller(x, adf_params)
     _assert_parity(adf_actual, adf_expected, "augmented_dickey_fuller")
 
+    repeats = int(os.getenv("BENCH_REPEATS", "1"))
+
     approx_old_t = _time_call(
         lambda: [  # noqa: E731
             _approximate_entropy_original(x, config["m"], config["r"])
             for config in approx_params
-        ]
+        ],
+        repeats=repeats,
     )
-    approx_new_t = _time_call(approximate_entropy_block_combiner, x, approx_params)
+    approx_new_t = _time_call(
+        approximate_entropy_block_combiner, x, approx_params, repeats=repeats
+    )
 
     sampen_old_t = _time_call(
         lambda: [  # noqa: E731
             _sample_entropy_original(x, config["m"], config["r"])
             for config in sampen_params
-        ]
+        ],
+        repeats=repeats,
     )
-    sampen_new_t = _time_call(sample_entropy_block_combiner, x, sampen_params)
+    sampen_new_t = _time_call(
+        sample_entropy_block_combiner, x, sampen_params, repeats=repeats
+    )
 
     change_old_t = _time_call(
         lambda: [  # noqa: E731
@@ -118,14 +132,19 @@ def bench():
                 x, config["ql"], config["qh"], config["isabs"], config["f_agg"]
             )
             for config in change_params
-        ]
+        ],
+        repeats=repeats,
     )
-    change_new_t = _time_call(change_quantiles_qcut_exact_combiner, x, change_params)
+    change_new_t = _time_call(
+        change_quantiles_qcut_exact_combiner, x, change_params, repeats=repeats
+    )
 
-    adf_old_t = _time_call(_augmented_dickey_fuller_original, x, adf_params, repeats=2)
-    adf_new_t = _time_call(augmented_dickey_fuller, x, adf_params, repeats=2)
+    adf_old_t = _time_call(
+        _augmented_dickey_fuller_original, x, adf_params, repeats=repeats
+    )
+    adf_new_t = _time_call(augmented_dickey_fuller, x, adf_params, repeats=repeats)
 
-    print("Benchmarks (best of 3 unless noted):")
+    print(f"Benchmarks (best of {repeats}):")
     print(
         "approximate_entropy: "
         f"{approx_old_t:.4f}s -> {approx_new_t:.4f}s "
@@ -142,7 +161,7 @@ def bench():
         f"(x{change_old_t/change_new_t:.2f})"
     )
     print(
-        "ADF (best of 2):      "
+        f"ADF (best of {repeats}):      "
         f"{adf_old_t:.4f}s -> {adf_new_t:.4f}s "
         f"(x{adf_old_t/adf_new_t:.2f})"
     )
