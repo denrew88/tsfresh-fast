@@ -1534,21 +1534,109 @@ def _change_quantiles_original(x, ql, qh, isabs, f_agg):
     return aggregator(div[ind_inside_corridor])
 
 
+def _qcut_inside_len2_exact_from_edges(x, lo, hi):
+    bins = np.array([lo, hi], dtype=np.float64)
+    ids = np.searchsorted(bins, x, side="left")
+    ids[x == lo] = 1
+    na_mask = np.isnan(x) | (ids == 0) | (ids == len(bins))
+    codes = (ids - 1).astype(np.float64)
+    codes[na_mask] = np.nan
+    return codes == 0
+
+
 @set_property("fctype", "combiner")
 def change_quantiles_qcut_exact_combiner(x, param):
-    res = {}
-    for config in param:
+    x = np.asarray(x, dtype=np.float64)
+    n = x.size
+    results = [None] * len(param)
+
+    if n < 2:
+        for idx, config in enumerate(param):
+            ql = config["ql"]
+            qh = config["qh"]
+            isabs = config["isabs"]
+            f_agg = config["f_agg"]
+            key = f"f_agg_{f_agg}__isabs_{isabs}__qh_{qh}__ql_{ql}"
+            results[idx] = (key, 0.0)
+        return results
+
+    div = np.diff(x)
+    abs_div = np.abs(div)
+
+    params_by_quant = defaultdict(list)
+    q_values = set()
+    invalid_pairs = set()
+    for idx, config in enumerate(param):
         ql = config["ql"]
         qh = config["qh"]
-        isabs = config["isabs"]
-        f_agg = config["f_agg"]
-        key = f"f_agg_{f_agg}__isabs_{isabs}__qh_{qh}__ql_{ql}"
-        res[key] = _change_quantiles_original(x, ql, qh, isabs, f_agg)
-    return list(res.items())
+        params_by_quant[(ql, qh)].append((idx, config))
+        if (0 <= ql <= 1) and (0 <= qh <= 1):
+            q_values.add(ql)
+            q_values.add(qh)
+        else:
+            invalid_pairs.add((ql, qh))
+
+    s = pd.Series(x).dropna()
+    if len(q_values) > 0:
+        q_list = sorted(q_values)
+        qvals = s.quantile(q_list)
+        if np.isscalar(qvals):
+            edge_map = {q_list[0]: float(qvals)}
+        else:
+            edge_map = {q: float(qvals.loc[q]) for q in q_list}
+    else:
+        edge_map = {}
+
+    for (ql, qh), entries in params_by_quant.items():
+        if ql >= qh:
+            for idx, config in entries:
+                key = (
+                    f"f_agg_{config['f_agg']}__isabs_{config['isabs']}__qh_{qh}__ql_{ql}"
+                )
+                results[idx] = (key, 0.0)
+            continue
+        if (ql, qh) in invalid_pairs:
+            for idx, config in entries:
+                key = (
+                    f"f_agg_{config['f_agg']}__isabs_{config['isabs']}__qh_{qh}__ql_{ql}"
+                )
+                results[idx] = (key, 0.0)
+            continue
+
+        lo = edge_map.get(ql, np.nan)
+        hi = edge_map.get(qh, np.nan)
+        if np.isnan(lo) or np.isnan(hi) or lo == hi:
+            for idx, config in entries:
+                key = (
+                    f"f_agg_{config['f_agg']}__isabs_{config['isabs']}__qh_{qh}__ql_{ql}"
+                )
+                results[idx] = (key, 0.0)
+            continue
+
+        inside = _qcut_inside_len2_exact_from_edges(x, lo, hi)
+        ind = inside[1:] & inside[:-1]
+
+        if not np.any(ind):
+            for idx, config in entries:
+                key = (
+                    f"f_agg_{config['f_agg']}__isabs_{config['isabs']}__qh_{qh}__ql_{ql}"
+                )
+                results[idx] = (key, 0.0)
+            continue
+
+        for idx, config in entries:
+            f_agg = config["f_agg"]
+            isabs = config["isabs"]
+            key = f"f_agg_{f_agg}__isabs_{isabs}__qh_{qh}__ql_{ql}"
+            values = abs_div if isabs else div
+            aggregator = getattr(np, f_agg)
+            results[idx] = (key, aggregator(values[ind]))
+
+    return results
 
 
-@set_property("fctype", "simple")
-def change_quantiles(x, ql, qh, isabs, f_agg):
+@set_property("fctype", "combiner")
+def change_quantiles(x, ql=None, qh=None, isabs=None, f_agg=None, param=None):
     """
     First fixes a corridor given by the quantiles ql and qh of the distribution of x.
     Then calculates the average, absolute value of consecutive changes of the series x inside this corridor.
@@ -1570,7 +1658,13 @@ def change_quantiles(x, ql, qh, isabs, f_agg):
     :return: the value of this feature
     :return type: float
     """
-    return _change_quantiles_original(x, ql, qh, isabs, f_agg)
+    if param is not None:
+        return change_quantiles_qcut_exact_combiner(x, param)
+
+    result = change_quantiles_qcut_exact_combiner(
+        x, [{"ql": ql, "qh": qh, "isabs": isabs, "f_agg": f_agg}]
+    )
+    return result[0][1]
 
 
 @set_property("fctype", "simple")
