@@ -475,4 +475,7 @@ class RelevantFeatureAugmenter(BaseEstimator, TransformerMixin):
 
         self.feature_selector.fit(X_augmented, y)
 
+        # Mark as fitted for sklearn's check_is_fitted (Pipeline compatibility)
+        self.is_fitted_ = True
+
         return X_augmented

@@ -133,7 +133,7 @@ def _sample_entropy_expected(x, params):
 def _change_quantiles_expected(x, params):
     return [
         (
-            f"f_agg_{config['f_agg']}__isabs_{config['isabs']}__qh_{config['qh']}__ql_{config['ql']}",
+            f'f_agg_"{config["f_agg"]}"__isabs_{config["isabs"]}__qh_{config["qh"]}__ql_{config["ql"]}',
             _change_quantiles_original(
                 x, config["ql"], config["qh"], config["isabs"], config["f_agg"]
             ),

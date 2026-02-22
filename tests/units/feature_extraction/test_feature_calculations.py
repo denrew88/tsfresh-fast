@@ -142,7 +142,7 @@ class FeatureCalculationTestCase(TestCase):
         )
 
     def _change_quantiles_value(self, x, ql, qh, isabs, f_agg):
-        key = f"f_agg_{f_agg}__isabs_{isabs}__qh_{qh}__ql_{ql}"
+        key = f'f_agg_"{f_agg}"__isabs_{isabs}__qh_{qh}__ql_{ql}'
         param = [{"ql": ql, "qh": qh, "isabs": isabs, "f_agg": f_agg}]
         return dict(change_quantiles(x, param=param))[key]
 

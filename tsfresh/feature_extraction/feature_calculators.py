@@ -1789,7 +1789,6 @@ def _qcut_inside_len2_exact_from_edges(x, lo, hi):
     return codes == 0
 
 
-@set_property("fctype", "combiner")
 def change_quantiles_qcut_exact_combiner(x, param):
     x = np.asarray(x, dtype=np.float64)
     n = x.size
@@ -1801,7 +1800,7 @@ def change_quantiles_qcut_exact_combiner(x, param):
             qh = config["qh"]
             isabs = config["isabs"]
             f_agg = config["f_agg"]
-            key = f"f_agg_{f_agg}__isabs_{isabs}__qh_{qh}__ql_{ql}"
+            key = f'f_agg_"{f_agg}"__isabs_{isabs}__qh_{qh}__ql_{ql}'
             results[idx] = (key, 0.0)
         return results
 
@@ -1836,14 +1835,14 @@ def change_quantiles_qcut_exact_combiner(x, param):
         if ql >= qh:
             for idx, config in entries:
                 key = (
-                    f"f_agg_{config['f_agg']}__isabs_{config['isabs']}__qh_{qh}__ql_{ql}"
+                    f'f_agg_"{config["f_agg"]}"__isabs_{config["isabs"]}__qh_{qh}__ql_{ql}'
                 )
                 results[idx] = (key, 0.0)
             continue
         if (ql, qh) in invalid_pairs:
             for idx, config in entries:
                 key = (
-                    f"f_agg_{config['f_agg']}__isabs_{config['isabs']}__qh_{qh}__ql_{ql}"
+                    f'f_agg_"{config["f_agg"]}"__isabs_{config["isabs"]}__qh_{qh}__ql_{ql}'
                 )
                 results[idx] = (key, 0.0)
             continue
@@ -1853,7 +1852,7 @@ def change_quantiles_qcut_exact_combiner(x, param):
         if np.isnan(lo) or np.isnan(hi) or lo == hi:
             for idx, config in entries:
                 key = (
-                    f"f_agg_{config['f_agg']}__isabs_{config['isabs']}__qh_{qh}__ql_{ql}"
+                    f'f_agg_"{config["f_agg"]}"__isabs_{config["isabs"]}__qh_{qh}__ql_{ql}'
                 )
                 results[idx] = (key, 0.0)
             continue
@@ -1864,7 +1863,7 @@ def change_quantiles_qcut_exact_combiner(x, param):
         if not np.any(ind):
             for idx, config in entries:
                 key = (
-                    f"f_agg_{config['f_agg']}__isabs_{config['isabs']}__qh_{qh}__ql_{ql}"
+                    f'f_agg_"{config["f_agg"]}"__isabs_{config["isabs"]}__qh_{qh}__ql_{ql}'
                 )
                 results[idx] = (key, 0.0)
             continue
@@ -1872,7 +1871,7 @@ def change_quantiles_qcut_exact_combiner(x, param):
         for idx, config in entries:
             f_agg = config["f_agg"]
             isabs = config["isabs"]
-            key = f"f_agg_{f_agg}__isabs_{isabs}__qh_{qh}__ql_{ql}"
+            key = f'f_agg_"{f_agg}"__isabs_{isabs}__qh_{qh}__ql_{ql}'
             values = abs_div if isabs else div
             aggregator = getattr(np, f_agg)
             results[idx] = (key, aggregator(values[ind]))
@@ -2112,7 +2111,6 @@ def _count_chebyshev_matches_multi_tol(
     return total_counts
 
 
-@set_property("fctype", "combiner")
 @set_property("high_comp_cost", True)
 def sample_entropy_block_combiner(x, param):
     x = np.asarray(x)
@@ -2226,7 +2224,6 @@ def _phi_block_chebyshev_multi_tol(
     return np.sum(np.log(c_vals), axis=1) / k
 
 
-@set_property("fctype", "combiner")
 @set_property("high_comp_cost", True)
 def approximate_entropy_block_combiner(x, param):
     if not isinstance(x, (np.ndarray, pd.Series)):
