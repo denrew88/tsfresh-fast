@@ -19,6 +19,15 @@ This repository contains the *TSFRESH* python package. The abbreviation stands f
 
 The package provides systematic time-series feature extraction by combining established algorithms from statistics, time-series analysis, signal processing, and nonlinear dynamics with a robust feature selection algorithm. In this context, the term *time-series* is interpreted in the broadest possible sense, such that any types of sampled data or even event sequences can be characterised.
 
+## tsfresh-fast (developer notes)
+
+This fork focuses on performance optimizations while preserving numerical behavior.
+
+- Scope: optimized `approximate_entropy`, `sample_entropy`, `change_quantiles`, and `augmented_dickey_fuller` in `tsfresh/feature_extraction/feature_calculators.py`.
+- ADF toggle: `use_fast_solver` (in `extract_features` and transformers) selects solver behavior. `True` uses the fast normal-equation path, `False` uses the reference implementation.
+- Numerical parity: regression tests compare optimized vs original with `rtol=1e-12`, `atol=1e-12` across random/constant/NaN and smooth signals.
+- Benchmarks: see `benchmarks/bench_feature_calculators.py`.
+
 ## Spend less time on feature engineering
 
 Data Scientists often spend most of their time either cleaning data or building features.
