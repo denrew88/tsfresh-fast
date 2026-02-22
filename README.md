@@ -6,12 +6,9 @@
 
 # tsfresh
 
-[![Documentation Status](https://readthedocs.org/projects/tsfresh/badge/?version=latest)](https://tsfresh.readthedocs.io/en/latest/?badge=latest)
-[![Build Status](https://github.com/blue-yonder/tsfresh/workflows/Test%20Default%20Branch/badge.svg)](https://github.com/blue-yonder/tsfresh/actions)
-[![codecov](https://codecov.io/gh/blue-yonder/tsfresh/branch/main/graph/badge.svg)](https://codecov.io/gh/blue-yonder/tsfresh)
-[![license](https://img.shields.io/github/license/mashape/apistatus.svg)](https://github.com/blue-yonder/tsfresh/blob/main/LICENSE.txt)
-[![Binder](https://mybinder.org/badge.svg)](https://mybinder.org/v2/gh/blue-yonder/tsfresh/main?filepath=notebooks)
-[![Downloads](https://pepy.tech/badge/tsfresh)](https://pepy.tech/project/tsfresh)
+[![Build Status](https://github.com/denrew88/tsfresh-fast/actions/workflows/test.yml/badge.svg)](https://github.com/denrew88/tsfresh-fast/actions/workflows/test.yml)
+[![license](https://img.shields.io/github/license/denrew88/tsfresh-fast.svg)](https://github.com/denrew88/tsfresh-fast/blob/main/LICENSE.txt)
+[![Binder](https://mybinder.org/badge.svg)](https://mybinder.org/v2/gh/denrew88/tsfresh-fast/main?filepath=notebooks)
 
 This repository contains the *TSFRESH* python package. The abbreviation stands for
 
