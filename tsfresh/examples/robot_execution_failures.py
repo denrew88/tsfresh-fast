@@ -127,6 +127,9 @@ def load_robot_execution_failures(multiclass=False, file_name=data_file_name):
     df = pd.DataFrame(
         df_rows, columns=["id", "time", "F_x", "F_y", "F_z", "T_x", "T_y", "T_z"]
     )
-    y = pd.Series(id_to_target)
+    if multiclass:
+        y = pd.Series(id_to_target, dtype=object)
+    else:
+        y = pd.Series(id_to_target)
 
     return df, y

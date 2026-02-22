@@ -360,7 +360,13 @@ def infer_ml_task(y):
     :return: 'classification' or 'regression'
     :rtype: str
     """
-    if y.dtype.kind in np.typecodes["AllInteger"] or y.dtype == object:
+    if (
+        y.dtype.kind in np.typecodes["AllInteger"]
+        or pd.api.types.is_bool_dtype(y.dtype)
+        or pd.api.types.is_object_dtype(y.dtype)
+        or pd.api.types.is_string_dtype(y.dtype)
+        or isinstance(y.dtype, pd.CategoricalDtype)
+    ):
         ml_task = "classification"
     else:
         ml_task = "regression"

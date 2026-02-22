@@ -197,7 +197,7 @@ def get_range_values_per_column(df):
         # We have columns that does not contain any finite value at all, so we will store 0 instead.
         warnings.warn(
             "The columns {} did not have any finite values. Filling with zeros.".format(
-                df.iloc[:, np.where(is_col_non_finite)[0]].columns.values
+                list(df.iloc[:, np.where(is_col_non_finite)[0]].columns)
             ),
             RuntimeWarning,
         )
@@ -279,6 +279,7 @@ def _roll_out_time_series(
     min_timeshift,
     column_sort,
     column_id,
+    groupby_columns,
 ):
     """
     Internal helper function for roll_time_series.
@@ -316,6 +317,23 @@ def _roll_out_time_series(
 
     """
 
+    def _get_group_value(df_chunk, column):
+        if column in df_chunk.columns:
+            return df_chunk[column].iloc[0]
+
+        group_name = getattr(df_chunk, "name", None)
+        if group_name is None:
+            raise KeyError(column)
+
+        if isinstance(group_name, tuple):
+            if column in groupby_columns:
+                position = groupby_columns.index(column)
+                if position < len(group_name):
+                    return group_name[position]
+            return group_name[0]
+
+        return group_name
+
     def _f(x):
         if rolling_direction > 0:
             # For positive rolling, the right side of the window moves with `timeshift`
@@ -343,7 +361,12 @@ def _roll_out_time_series(
         else:
             timeshift_value = timeshift - 1
         # and now create new ones ids out of the old ones
-        df_temp["id"] = df_temp[column_id].apply(lambda row: (row, timeshift_value))
+        if column_id in df_temp.columns:
+            base_ids = df_temp[column_id]
+        else:
+            group_id = _get_group_value(x, column_id)
+            base_ids = pd.Series([group_id] * len(df_temp), index=df_temp.index)
+        df_temp["id"] = base_ids.apply(lambda row: (row, timeshift_value))
 
         return df_temp
 
@@ -563,6 +586,7 @@ def roll_time_series(
         "min_timeshift": min_timeshift,
         "column_sort": column_sort,
         "column_id": column_id,
+        "groupby_columns": grouper,
     }
 
     shifted_chunks = distributor.map_reduce(
@@ -708,6 +732,23 @@ def add_sub_time_series_index(
     if column_kind is not None:
         grouper.append(column_kind)
 
+    def _get_group_value(df_chunk, column):
+        if column in df_chunk.columns:
+            return df_chunk[column].iloc[0]
+
+        group_name = getattr(df_chunk, "name", None)
+        if group_name is None:
+            raise KeyError(column)
+
+        if isinstance(group_name, tuple):
+            if column in grouper:
+                position = grouper.index(column)
+                if position < len(group_name):
+                    return group_name[position]
+            return group_name[0]
+
+        return group_name
+
     def _add_id_column(df_chunk):
         chunk_length = len(df_chunk)
         last_chunk_number = chunk_length // sub_length
@@ -722,7 +763,12 @@ def add_sub_time_series_index(
         assert len(indices) == chunk_length
 
         if column_id:
-            indices = list(zip(indices, df_chunk[column_id]))
+            if column_id in df_chunk.columns:
+                base_ids = df_chunk[column_id].values
+            else:
+                group_id = _get_group_value(df_chunk, column_id)
+                base_ids = [group_id] * chunk_length
+            indices = list(zip(indices, base_ids))
 
         if column_sort:
             df_chunk = df_chunk.sort_values(column_sort)

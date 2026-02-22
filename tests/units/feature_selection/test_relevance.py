@@ -67,9 +67,9 @@ class TestCalculateRelevanceTable:
 
         relevance_table = calculate_relevance_table(X, y_binary)
         assert "feature_binary" == relevance_table.index[0]
-        assert "constant" == relevance_table.type[0]
-        assert np.isnan(relevance_table.p_value[0])
-        assert not relevance_table.relevant[0]
+        assert "constant" == relevance_table.type.iloc[0]
+        assert np.isnan(relevance_table.p_value.iloc[0])
+        assert not relevance_table.relevant.iloc[0]
 
     @mock.patch("tsfresh.feature_selection.relevance.target_binary_feature_real_test")
     @mock.patch("tsfresh.feature_selection.relevance.target_binary_feature_binary_test")

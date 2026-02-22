@@ -10,14 +10,37 @@ except ImportError:  # pragma: no cover
     dd = None
 
 
+def _get_group_value(group, column, group_name, position=None):
+    if column in group.columns:
+        return group[column].iloc[0]
+
+    if group_name is not None:
+        if isinstance(group_name, tuple):
+            if position is not None and position < len(group_name):
+                return group_name[position]
+        else:
+            return group_name
+
+    if isinstance(group.index, pd.MultiIndex):
+        if column in group.index.names:
+            return group.index.get_level_values(column)[0]
+        if position is not None and position < group.index.nlevels:
+            return group.index.get_level_values(position)[0]
+    elif group.index.name == column:
+        return group.index[0]
+
+    raise KeyError(column)
+
+
 def _binding_helper(f, kwargs, column_sort, column_id, column_kind, column_value):
     def wrapped_feature_extraction(x):
         if column_sort is not None:
             x = x.sort_values(column_sort)
 
-        chunk = Timeseries(
-            x[column_id].iloc[0], x[column_kind].iloc[0], x[column_value]
-        )
+        group_name = getattr(x, "name", None)
+        ts_id = _get_group_value(x, column_id, group_name, position=0)
+        ts_kind = _get_group_value(x, column_kind, group_name, position=1)
+        chunk = Timeseries(ts_id, ts_kind, x[column_value])
         result = f(chunk, **kwargs)
 
         result = pd.DataFrame(result, columns=[column_id, "variable", "value"])
