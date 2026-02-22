@@ -166,7 +166,7 @@ def extract_features(
     if use_fast_solver is not None:
         solver_env = feature_calculators._ADF_SOLVER_ENV
         prev_solver = os.environ.get(solver_env)
-        os.environ[solver_env] = "normal_eq" if use_fast_solver else "pinv"
+        os.environ[solver_env] = "normal_eq" if use_fast_solver else "original"
 
     try:
         with warnings.catch_warnings():

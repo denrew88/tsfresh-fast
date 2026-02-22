@@ -534,6 +534,8 @@ _ADF_SOLVER_DEFAULT = "pinv"
 
 def _get_adf_solver():
     solver = os.environ.get(_ADF_SOLVER_ENV, _ADF_SOLVER_DEFAULT).strip().lower()
+    if solver in ("original", "orig", "reference", "ref"):
+        return "original"
     if solver in ("pinv", "normal_eq", "ne", "xtx"):
         return "normal_eq" if solver in ("normal_eq", "ne", "xtx") else "pinv"
     return _ADF_SOLVER_DEFAULT
@@ -551,6 +553,8 @@ def _adf_ols_from_sufficient_stats(
     xtx = np.asarray(xtx, dtype=float)
     xty = np.asarray(xty, dtype=float)
     solver = _get_adf_solver()
+    if solver == "original":
+        solver = "pinv"
 
     if solver != "pinv" or exog is None or endog is None:
         eigvals = np.linalg.eigvalsh(xtx)
@@ -759,6 +763,10 @@ def augmented_dickey_fuller(x, param):
     :return: the value of this feature
     :return type: List[Tuple[str, float]]
     """
+    solver = _get_adf_solver()
+    if solver == "original":
+        return _augmented_dickey_fuller_original(x, param)
+
     res = []
     cache = {}
     for config in param:
