@@ -23,7 +23,7 @@ import os
 import warnings
 from builtins import range
 from collections import defaultdict
-from typing import Literal
+from typing import Literal, Optional
 
 import numpy as np
 import pandas as pd
@@ -547,8 +547,8 @@ def _adf_ols_from_sufficient_stats(
     yty: float,
     nobs: int,
     rcond_x: float = 1e-15,
-    exog: np.ndarray | None = None,
-    endog: np.ndarray | None = None,
+    exog: Optional[np.ndarray] = None,
+    endog: Optional[np.ndarray] = None,
 ):
     xtx = np.asarray(xtx, dtype=float)
     xty = np.asarray(xty, dtype=float)
