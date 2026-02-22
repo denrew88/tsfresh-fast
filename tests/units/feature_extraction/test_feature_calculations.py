@@ -1548,15 +1548,22 @@ class FeatureCalculationTestCase(TestCase):
         )
 
     def test_approximate_entropy(self):
-        self.assertEqualOnAllArrayTypes(approximate_entropy, [1], 0, m=2, r=0.5)
-        self.assertEqualOnAllArrayTypes(approximate_entropy, [1, 2], 0, m=2, r=0.5)
-        self.assertEqualOnAllArrayTypes(approximate_entropy, [1, 2, 3], 0, m=2, r=0.5)
-        self.assertEqualOnAllArrayTypes(approximate_entropy, [1, 2, 3], 0, m=2, r=0.5)
+        def approx_value(x, m, r):
+            key = f"m_{m}__r_{r:g}"
+            return dict(approximate_entropy(x, param=[{"m": m, "r": r}]))[key]
+
+        self.assertEqualOnAllArrayTypes(approx_value, [1], 0, m=2, r=0.5)
+        self.assertEqualOnAllArrayTypes(approx_value, [1, 2], 0, m=2, r=0.5)
+        self.assertEqualOnAllArrayTypes(approx_value, [1, 2, 3], 0, m=2, r=0.5)
+        self.assertEqualOnAllArrayTypes(approx_value, [1, 2, 3], 0, m=2, r=0.5)
         self.assertAlmostEqualOnAllArrayTypes(
-            approximate_entropy, [12, 13, 15, 16, 17] * 10, 0.282456191, m=2, r=0.9
+            approx_value, [12, 13, 15, 16, 17] * 10, 0.282456191, m=2, r=0.9
         )
         self.assertRaises(
-            ValueError, approximate_entropy, x=[12, 13, 15, 16, 17] * 10, m=2, r=-0.5
+            ValueError,
+            approximate_entropy,
+            x=[12, 13, 15, 16, 17] * 10,
+            param=[{"m": 2, "r": -0.5}],
         )
 
     def test_absolute_maximum(self):

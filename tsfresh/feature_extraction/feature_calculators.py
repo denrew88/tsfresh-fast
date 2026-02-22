@@ -2263,9 +2263,9 @@ def approximate_entropy_block_combiner(x, param):
     return results
 
 
-@set_property("fctype", "simple")
+@set_property("fctype", "combiner")
 @set_property("high_comp_cost", True)
-def approximate_entropy(x, m, r):
+def approximate_entropy(x, param):
     """
     Implements a vectorized Approximate entropy algorithm.
 
@@ -2285,15 +2285,13 @@ def approximate_entropy(x, m, r):
 
     :param x: the time series to calculate the feature of
     :type x: numpy.ndarray
-    :param m: Length of compared run of data
-    :type m: int
-    :param r: Filtering level, must be positive
-    :type r: float
+    :param param: contains dictionaries {"m": m, "r": r}
+    :type param: list
 
     :return: Approximate entropy
-    :return type: float
+    :return type: list
     """
-    return approximate_entropy_block_combiner(x, [{"m": m, "r": r}])[0][1]
+    return approximate_entropy_block_combiner(x, param)
 
 
 @set_property("fctype", "simple")
