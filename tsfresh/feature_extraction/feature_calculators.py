@@ -1873,7 +1873,7 @@ def change_quantiles_qcut_exact_combiner(x, param):
 
 
 @set_property("fctype", "combiner")
-def change_quantiles(x, ql=None, qh=None, isabs=None, f_agg=None, param=None):
+def change_quantiles(x, param):
     """
     First fixes a corridor given by the quantiles ql and qh of the distribution of x.
     Then calculates the average, absolute value of consecutive changes of the series x inside this corridor.
@@ -1883,25 +1883,13 @@ def change_quantiles(x, ql=None, qh=None, isabs=None, f_agg=None, param=None):
 
     :param x: the time series to calculate the feature of
     :type x: numpy.ndarray
-    :param ql: the lower quantile of the corridor
-    :type ql: float
-    :param qh: the higher quantile of the corridor
-    :type qh: float
-    :param isabs: should the absolute differences be taken?
-    :type isabs: bool
-    :param f_agg: the aggregator function that is applied to the differences in the bin
-    :type f_agg: str, name of a numpy function (e.g. mean, var, std, median)
+    :param param: contains dictionaries {"ql": ql, "qh": qh, "isabs": isabs, "f_agg": f_agg}
+    :type param: list
 
     :return: the value of this feature
-    :return type: float
+    :return type: list
     """
-    if param is not None:
-        return change_quantiles_qcut_exact_combiner(x, param)
-
-    result = change_quantiles_qcut_exact_combiner(
-        x, [{"ql": ql, "qh": qh, "isabs": isabs, "f_agg": f_agg}]
-    )
-    return result[0][1]
+    return change_quantiles_qcut_exact_combiner(x, param)
 
 
 @set_property("fctype", "simple")

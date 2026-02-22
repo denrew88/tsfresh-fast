@@ -141,6 +141,11 @@ class FeatureCalculationTestCase(TestCase):
             ),
         )
 
+    def _change_quantiles_value(self, x, ql, qh, isabs, f_agg):
+        key = f"f_agg_{f_agg}__isabs_{isabs}__qh_{qh}__ql_{ql}"
+        param = [{"ql": ql, "qh": qh, "isabs": isabs, "f_agg": f_agg}]
+        return dict(change_quantiles(x, param=param))[key]
+
     def test__roll(self):
         x = np.random.normal(size=30)
         for shift in [0, 1, 10, 11, 30, 31, 50, 51, 150, 151]:
@@ -1361,7 +1366,7 @@ class FeatureCalculationTestCase(TestCase):
     def test_mean_abs_change_quantiles(self):
 
         self.assertAlmostEqualOnAllArrayTypes(
-            change_quantiles,
+            self._change_quantiles_value,
             list(range(10)),
             1,
             ql=0.1,
@@ -1370,7 +1375,7 @@ class FeatureCalculationTestCase(TestCase):
             f_agg="mean",
         )
         self.assertAlmostEqualOnAllArrayTypes(
-            change_quantiles,
+            self._change_quantiles_value,
             list(range(10)),
             0,
             ql=0.15,
@@ -1379,10 +1384,16 @@ class FeatureCalculationTestCase(TestCase):
             f_agg="mean",
         )
         self.assertAlmostEqualOnAllArrayTypes(
-            change_quantiles, [0, 1, 0, 0, 0], 0.5, ql=0, qh=1, isabs=True, f_agg="mean"
+            self._change_quantiles_value,
+            [0, 1, 0, 0, 0],
+            0.5,
+            ql=0,
+            qh=1,
+            isabs=True,
+            f_agg="mean",
         )
         self.assertAlmostEqualOnAllArrayTypes(
-            change_quantiles,
+            self._change_quantiles_value,
             [0, 1, 0, 0, 0],
             0.5,
             ql=0.1,
@@ -1391,7 +1402,7 @@ class FeatureCalculationTestCase(TestCase):
             f_agg="mean",
         )
         self.assertAlmostEqualOnAllArrayTypes(
-            change_quantiles,
+            self._change_quantiles_value,
             [0, 1, 0, 0, 0],
             0,
             ql=0.1,
@@ -1400,10 +1411,16 @@ class FeatureCalculationTestCase(TestCase):
             f_agg="mean",
         )
         self.assertAlmostEqualOnAllArrayTypes(
-            change_quantiles, [0, 1, -9, 0, 0], 5, ql=0, qh=1, isabs=True, f_agg="mean"
+            self._change_quantiles_value,
+            [0, 1, -9, 0, 0],
+            5,
+            ql=0,
+            qh=1,
+            isabs=True,
+            f_agg="mean",
         )
         self.assertAlmostEqualOnAllArrayTypes(
-            change_quantiles,
+            self._change_quantiles_value,
             [0, 1, -9, 0, 0],
             0.5,
             ql=0.1,
@@ -1412,7 +1429,7 @@ class FeatureCalculationTestCase(TestCase):
             f_agg="mean",
         )
         self.assertAlmostEqualOnAllArrayTypes(
-            change_quantiles,
+            self._change_quantiles_value,
             [0, 1, -9, 0, 0, 1, 0],
             0.75,
             ql=0.1,
@@ -1422,7 +1439,7 @@ class FeatureCalculationTestCase(TestCase):
         )
 
         self.assertAlmostEqualOnAllArrayTypes(
-            change_quantiles,
+            self._change_quantiles_value,
             list(range(10)),
             1,
             ql=0.1,
@@ -1431,7 +1448,7 @@ class FeatureCalculationTestCase(TestCase):
             f_agg="mean",
         )
         self.assertAlmostEqualOnAllArrayTypes(
-            change_quantiles,
+            self._change_quantiles_value,
             list(range(10)),
             0,
             ql=0.15,
@@ -1440,10 +1457,16 @@ class FeatureCalculationTestCase(TestCase):
             f_agg="mean",
         )
         self.assertAlmostEqualOnAllArrayTypes(
-            change_quantiles, [0, 1, 0, 0, 0], 0, ql=0, qh=1, isabs=False, f_agg="mean"
+            self._change_quantiles_value,
+            [0, 1, 0, 0, 0],
+            0,
+            ql=0,
+            qh=1,
+            isabs=False,
+            f_agg="mean",
         )
         self.assertAlmostEqualOnAllArrayTypes(
-            change_quantiles,
+            self._change_quantiles_value,
             [0, 1, 0, 0, 0],
             0,
             ql=0.1,
@@ -1452,7 +1475,7 @@ class FeatureCalculationTestCase(TestCase):
             f_agg="mean",
         )
         self.assertAlmostEqualOnAllArrayTypes(
-            change_quantiles,
+            self._change_quantiles_value,
             [0, 1, 0, 0, 0],
             0,
             ql=0.1,
@@ -1461,10 +1484,16 @@ class FeatureCalculationTestCase(TestCase):
             f_agg="mean",
         )
         self.assertAlmostEqualOnAllArrayTypes(
-            change_quantiles, [0, 1, -9, 0, 0], 0, ql=0, qh=1, isabs=False, f_agg="mean"
+            self._change_quantiles_value,
+            [0, 1, -9, 0, 0],
+            0,
+            ql=0,
+            qh=1,
+            isabs=False,
+            f_agg="mean",
         )
         self.assertAlmostEqualOnAllArrayTypes(
-            change_quantiles,
+            self._change_quantiles_value,
             [0, 1, -9, 0, 0],
             0.5,
             ql=0.1,
@@ -1473,7 +1502,7 @@ class FeatureCalculationTestCase(TestCase):
             f_agg="mean",
         )
         self.assertAlmostEqualOnAllArrayTypes(
-            change_quantiles,
+            self._change_quantiles_value,
             [0, 1, -9, 0, 0, 1, 0],
             0.25,
             ql=0.1,
@@ -1483,7 +1512,7 @@ class FeatureCalculationTestCase(TestCase):
         )
 
         self.assertAlmostEqualOnAllArrayTypes(
-            change_quantiles,
+            self._change_quantiles_value,
             list(range(10)),
             0,
             ql=0.1,
@@ -1492,11 +1521,17 @@ class FeatureCalculationTestCase(TestCase):
             f_agg="std",
         )
         self.assertAlmostEqualOnAllArrayTypes(
-            change_quantiles, [0, 1, 0, 0, 0], 0.5, ql=0, qh=1, isabs=True, f_agg="std"
+            self._change_quantiles_value,
+            [0, 1, 0, 0, 0],
+            0.5,
+            ql=0,
+            qh=1,
+            isabs=True,
+            f_agg="std",
         )
 
         self.assertAlmostEqualOnAllArrayTypes(
-            change_quantiles,
+            self._change_quantiles_value,
             list(range(10)),
             0,
             ql=0.1,
@@ -1505,7 +1540,13 @@ class FeatureCalculationTestCase(TestCase):
             f_agg="std",
         )
         self.assertAlmostEqualOnAllArrayTypes(
-            change_quantiles, [0, 1, 0, 1, 0], 1, ql=0, qh=1, isabs=False, f_agg="std"
+            self._change_quantiles_value,
+            [0, 1, 0, 1, 0],
+            1,
+            ql=0,
+            qh=1,
+            isabs=False,
+            f_agg="std",
         )
 
     def test_value_count(self):
@@ -1941,7 +1982,13 @@ class FeatureCalculationTestCase(TestCase):
     def test_change_quantiles(self):
         """Test change_quantiles function when changing from `sum` to `np.sum`."""
         np.random.seed(0)
-        res = change_quantiles(np.random.rand(10000) * 1000, 0.1, 0.2, False, "mean")
+        res = self._change_quantiles_value(
+            np.random.rand(10000) * 1000,
+            ql=0.1,
+            qh=0.2,
+            isabs=False,
+            f_agg="mean",
+        )
         self.assertAlmostEqual(res, -0.9443846621365727)
 
     def test_count_above(self):
