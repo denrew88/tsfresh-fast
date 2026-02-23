@@ -605,6 +605,74 @@ def _adf_ols_from_sufficient_stats(
     return beta, tvalues, sse, df_resid, rank
 
 
+def _adf_pinv_prefix_solver(
+    exog_full: np.ndarray,
+    endog: np.ndarray,
+    rcond_x: float = 1e-15,
+    fallback_factor: float = 1e6,
+):
+    exog_full = np.asarray(exog_full, dtype=float)
+    endog = np.asarray(endog, dtype=float)
+    u_full, s_full, vt_full = np.linalg.svd(exog_full, full_matrices=False)
+    z_full = u_full.T @ endog
+    nobs = endog.shape[0]
+    cache = {}
+
+    def solve(k: int):
+        if k in cache:
+            return cache[k]
+
+        kp = s_full[:, None] * vt_full[:, :k]
+        u_p, s_p, vt_p = np.linalg.svd(kp, full_matrices=False)
+        if s_p.size:
+            cutoff = rcond_x * np.maximum.reduce(s_p)
+            if np.min(s_p) <= cutoff * fallback_factor:
+                exog_k = exog_full[:, :k]
+                pinv, singular_values = pinv_extended(exog_k, rcond=rcond_x)
+                normalized_cov_params = pinv @ pinv.T
+                rank = (
+                    np.linalg.matrix_rank(np.diag(singular_values))
+                    if singular_values.size
+                    else 0
+                )
+                beta = pinv @ endog
+                resid = endog - exog_k @ beta
+                sse = float(np.dot(resid, resid))
+                df_resid = nobs - rank
+                sigma2 = sse / df_resid
+                se = np.sqrt(np.diag(normalized_cov_params) * sigma2)
+                tvalues = beta / se
+                result = beta, tvalues, sse, df_resid, rank
+                cache[k] = result
+                return result
+
+            s_inv = np.where(s_p > cutoff, 1.0 / s_p, 0.0)
+        else:
+            s_inv = s_p
+
+        z_p = u_p.T @ z_full
+        beta = vt_p.T @ (s_inv * z_p)
+
+        resid = endog - exog_full[:, :k] @ beta
+        sse = float(np.dot(resid, resid))
+        rank = np.linalg.matrix_rank(np.diag(s_p)) if s_p.size else 0
+        df_resid = nobs - rank
+        sigma2 = sse / df_resid
+
+        if s_p.size:
+            var_beta = (vt_p.T**2) @ (s_inv**2)
+        else:
+            var_beta = np.zeros(k, dtype=float)
+        se = np.sqrt(var_beta * sigma2)
+        tvalues = beta / se
+
+        result = beta, tvalues, sse, df_resid, rank
+        cache[k] = result
+        return result
+
+    return solve
+
+
 def _adf_autolag_from_sufficient_stats(
     xtx_full: np.ndarray,
     xty_full: np.ndarray,
@@ -615,19 +683,29 @@ def _adf_autolag_from_sufficient_stats(
     method: str,
     exog_full: np.ndarray,
     endog: np.ndarray,
+    rcond_x: float = 1e-15,
 ):
+    prefix_solver = None
+    if _get_adf_solver() == "pinv":
+        prefix_solver = _adf_pinv_prefix_solver(
+            exog_full, endog, rcond_x=rcond_x
+        )
+
     k_start = startlag
     k_end = startlag + maxlag
     if method in ("aic", "bic"):
         icbest = np.inf
         best_k = k_start
         for k in range(k_start, k_end + 1):
-            xtx_k = xtx_full[:k, :k]
-            xty_k = xty_full[:k]
-            exog_k = exog_full[:, :k]
-            _, _, sse, _, rank = _adf_ols_from_sufficient_stats(
-                xtx_k, xty_k, yty, nobs, exog=exog_k, endog=endog
-            )
+            if prefix_solver is not None:
+                _, _, sse, _, rank = prefix_solver(k)
+            else:
+                xtx_k = xtx_full[:k, :k]
+                xty_k = xty_full[:k]
+                exog_k = exog_full[:, :k]
+                _, _, sse, _, rank = _adf_ols_from_sufficient_stats(
+                    xtx_k, xty_k, yty, nobs, exog=exog_k, endog=endog
+                )
             llf = -0.5 * nobs * (
                 np.log(2.0 * np.pi) + np.log(sse / nobs) + 1.0
             )
@@ -645,12 +723,15 @@ def _adf_autolag_from_sufficient_stats(
         stop = 1.6448536269514722
         tvalues_last = []
         for k in range(k_start, k_end + 1):
-            xtx_k = xtx_full[:k, :k]
-            xty_k = xty_full[:k]
-            exog_k = exog_full[:, :k]
-            beta, tvalues, _, _, _ = _adf_ols_from_sufficient_stats(
-                xtx_k, xty_k, yty, nobs, exog=exog_k, endog=endog
-            )
+            if prefix_solver is not None:
+                beta, tvalues, _, _, _ = prefix_solver(k)
+            else:
+                xtx_k = xtx_full[:k, :k]
+                xty_k = xty_full[:k]
+                exog_k = exog_full[:, :k]
+                beta, tvalues, _, _, _ = _adf_ols_from_sufficient_stats(
+                    xtx_k, xty_k, yty, nobs, exog=exog_k, endog=endog
+                )
             t_last = tvalues[-1]
             tvalues_last.append(t_last)
 
