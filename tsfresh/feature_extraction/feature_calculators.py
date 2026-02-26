@@ -31,7 +31,8 @@ import pywt
 import stumpy
 from numpy.linalg import LinAlgError
 from scipy.signal import find_peaks_cwt, welch
-from scipy.stats import linregress
+from scipy.signal import _peak_finding as _scipy_peak_finding
+from scipy.stats import linregress, scoreatpercentile
 from statsmodels.tools.sm_exceptions import MissingDataError
 from statsmodels.tools.tools import pinv_extended
 from statsmodels.tsa.ar_model import AutoReg
@@ -1645,6 +1646,96 @@ def _ricker(points, a):
     return total
 
 
+def _filter_ridge_lines_sparse_noise(
+    cwt, ridge_lines, window_size=None, min_length=None, min_snr=1, noise_perc=10
+):
+    """
+    A drop-in replacement for scipy.signal._peak_finding._filter_ridge_lines that
+    computes the noise floor only at ridge peak columns.
+    """
+    num_points = cwt.shape[1]
+    if min_length is None:
+        min_length = np.ceil(cwt.shape[0] / 4)
+    if window_size is None:
+        window_size = np.ceil(num_points / 20)
+
+    window_size = int(window_size)
+    hf_window, odd = divmod(window_size, 2)
+
+    if len(ridge_lines) == 0:
+        return []
+
+    row_one = cwt[0, :]
+    peak_cols = np.array([line[1][0] for line in ridge_lines], dtype=np.int64)
+    unique_cols, inv = np.unique(peak_cols, return_inverse=True)
+
+    noises = np.empty(unique_cols.shape[0], dtype=row_one.dtype)
+    for i, col in enumerate(unique_cols):
+        window_start = max(col - hf_window, 0)
+        window_end = min(col + hf_window + odd, num_points)
+        noises[i] = scoreatpercentile(
+            row_one[window_start:window_end], per=noise_perc
+        )
+
+    noises_for_line = noises[inv]
+    out = []
+    for line, noise_val in zip(ridge_lines, noises_for_line):
+        if len(line[0]) < min_length:
+            continue
+        snr = abs(cwt[line[0][0], line[1][0]] / noise_val)
+        if snr < min_snr:
+            continue
+        out.append(line)
+
+    return out
+
+
+def _find_peaks_cwt_sparse_noise(
+    vector,
+    widths,
+    wavelet=None,
+    max_distances=None,
+    gap_thresh=None,
+    min_length=None,
+    min_snr=1,
+    noise_perc=10,
+    window_size=None,
+):
+    widths = np.atleast_1d(np.asarray(widths))
+
+    if gap_thresh is None:
+        gap_thresh = np.ceil(widths[0])
+    if max_distances is None:
+        max_distances = widths / 4.0
+    if wavelet is None:
+        wavelet = _ricker
+
+    cwt_dat = _scipy_peak_finding._cwt(vector, wavelet, widths)
+    ridge_lines = _scipy_peak_finding._identify_ridge_lines(
+        cwt_dat, max_distances, gap_thresh
+    )
+    filtered = _filter_ridge_lines_sparse_noise(
+        cwt_dat,
+        ridge_lines,
+        min_length=min_length,
+        window_size=window_size,
+        min_snr=min_snr,
+        noise_perc=noise_perc,
+    )
+    max_locs = np.asarray([x[1][0] for x in filtered])
+    max_locs.sort()
+
+    return max_locs
+
+
+def _number_cwt_peaks_original(x, n):
+    return len(
+        find_peaks_cwt(
+            vector=x, widths=np.array(list(range(1, n + 1))), wavelet=_ricker
+        )
+    )
+
+
 @set_property("fctype", "simple")
 def number_cwt_peaks(x, n):
     """
@@ -1662,7 +1753,7 @@ def number_cwt_peaks(x, n):
     :return type: int
     """
     return len(
-        find_peaks_cwt(
+        _find_peaks_cwt_sparse_noise(
             vector=x, widths=np.array(list(range(1, n + 1))), wavelet=_ricker
         )
     )
