@@ -2475,8 +2475,7 @@ def fourier_entropy(x, bins):
     return binned_entropy(pxx / np.max(pxx), bins)
 
 
-@set_property("fctype", "simple")
-def lempel_ziv_complexity(x, bins):
+def _lempel_ziv_complexity_original(x, bins):
     """
     Calculate a complexity estimate based on the Lempel-Ziv compression
     algorithm.
@@ -2514,6 +2513,11 @@ def lempel_ziv_complexity(x, bins):
             ind += inc
             inc = 1
     return len(sub_strings) / n
+
+
+@set_property("fctype", "simple")
+def lempel_ziv_complexity(x, bins):
+    return _lempel_ziv_complexity_original(x, bins)
 
 
 @set_property("fctype", "simple")
