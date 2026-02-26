@@ -2515,9 +2515,44 @@ def _lempel_ziv_complexity_original(x, bins):
     return len(sub_strings) / n
 
 
+def _lempel_ziv_complexity_bytes(sequence):
+    n = len(sequence)
+    seq_max = int(sequence.max()) if n else 0
+    if seq_max <= np.iinfo(np.uint8).max:
+        dtype = np.uint8
+    elif seq_max <= np.iinfo(np.uint16).max:
+        dtype = np.uint16
+    elif seq_max <= np.iinfo(np.uint32).max:
+        dtype = np.uint32
+    else:
+        dtype = np.uint64
+
+    seq = np.ascontiguousarray(sequence, dtype=dtype)
+    seq_bytes = seq.tobytes()
+    step = seq.itemsize
+
+    sub_strings = set()
+    ind = 0
+    inc = 1
+    while ind + inc <= n:
+        start = ind * step
+        end = (ind + inc) * step
+        sub_str = seq_bytes[start:end]
+        if sub_str in sub_strings:
+            inc += 1
+        else:
+            sub_strings.add(sub_str)
+            ind += inc
+            inc = 1
+    return len(sub_strings) / n
+
+
 @set_property("fctype", "simple")
 def lempel_ziv_complexity(x, bins):
-    return _lempel_ziv_complexity_original(x, bins)
+    x = np.asarray(x)
+    bins = np.linspace(np.min(x), np.max(x), bins + 1)[1:]
+    sequence = np.searchsorted(bins, x, side="left")
+    return _lempel_ziv_complexity_bytes(sequence)
 
 
 @set_property("fctype", "simple")
